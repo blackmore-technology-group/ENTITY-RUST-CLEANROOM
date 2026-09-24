@@ -1,3 +1,4 @@
+mod global;
 use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, Nonce};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey, pkcs8::DecodePublicKey};
@@ -112,6 +113,8 @@ fn run_campaign()->Value{
 fn main(){
  let args:Vec<String>=env::args().collect();
  if args.len()>1 && args[1]!="test"{let b=load(Path::new(&args[1]));let r=verify_bundle(&b);println!("{}",serde_json::to_string(&json!({"result_sha256":result_hash(&r),"result":r})).unwrap());std::process::exit(if r["overall_valid"]==Value::Bool(true){0}else{1});}
- let report=run_campaign(); println!("{}",serde_json::to_string_pretty(&report).unwrap());
- if report["vectors_passed"].as_u64()!=report["vectors_total"].as_u64()||report["recovery_pass"]!=Value::Bool(true){std::process::exit(1)}
+ let report=run_campaign();
+ let global=global::run_global_campaign(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("global-conformance-kit"));
+ println!("{}",serde_json::to_string_pretty(&json!({"legacy":report,"global_v3_1":global})).unwrap());
+ if report["vectors_passed"].as_u64()!=report["vectors_total"].as_u64()||report["recovery_pass"]!=Value::Bool(true)||global["overall_valid"]!=Value::Bool(true){std::process::exit(1)}
 }
