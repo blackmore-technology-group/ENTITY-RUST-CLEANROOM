@@ -44,7 +44,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p evidence-ci
-          cargo run --locked --release -- test | tee evidence-ci/cleanroom-report.json
+          cargo run --locked --release --bin entity-rust-cleanroom -- test | tee evidence-ci/cleanroom-report.json
           cargo run --locked --release --bin adoption_v32 | tee evidence-ci/adoption-v3.2-report.json
           grep -q '"vectors_passed": 16' evidence-ci/adoption-v3.2-report.json
           grep -q '1eb59e09ab08da86bfd8584df4a64ba331f7bbbce3d236b9b94f351606c90e18' evidence-ci/adoption-v3.2-report.json
