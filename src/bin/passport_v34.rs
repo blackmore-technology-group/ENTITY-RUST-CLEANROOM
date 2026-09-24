@@ -1,0 +1,22 @@
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::fs;
+const KIT:&str="passport-conformance-kit/ENTITY_V3_4_GLOBAL_PASSPORT_CLEANROOM_KIT.min.json";
+const KIT_SHA:&str="5869a3fd0ed6cb9f65bf4b20c3bd64933cad82f4aef05c5809e2e05af921f230";
+const EXPECTED:&str="ac7504cce70576008cff069607619660a4b9bf0cad43b3f3de81078f1e80d9ba";
+const CORE:[&str;5]=["ENTITY","AUTHORITY","RIGHT","EVENT","VALUE"];
+fn sha(b:&[u8])->String{format!("{:x}",Sha256::digest(b))}
+fn s<'a>(r:&'a Value,k:&str)->&'a str{r.get(k).and_then(Value::as_str).unwrap_or("")}
+fn b(r:&Value,k:&str,w:bool)->bool{r.get(k).and_then(Value::as_bool)==Some(w)}
+fn hex64(v:Option<&Value>)->bool{v.and_then(Value::as_str).is_some_and(|x|x.len()==64&&x.bytes().all(|c|c.is_ascii_digit()||(b'a'..=b'f').contains(&c)))}
+fn arr_eq(v:Option<&Value>,w:&[&str])->bool{v.and_then(Value::as_array).is_some_and(|a|a.len()==w.len()&&a.iter().zip(w).all(|(x,y)|x.as_str()==Some(*y)))}
+fn stack(r:&Value)->bool{let Some(refs)=r.get("profile_refs").and_then(Value::as_array) else{return false};let Some(hashes)=r.get("profile_hashes").and_then(Value::as_array) else{return false};!refs.is_empty()&&refs.iter().any(|x|x.as_str()==Some("entity-profile:global@1.0"))&&refs.len()==hashes.len()&&hashes.iter().all(|x|hex64(Some(x)))&&b(r,"fail_closed",true)&&b(r,"profile_composition_does_not_create_authority",true)&&b(r,"standards_mapping_is_not_normative_equivalence",true)}
+fn valid(r:&Value)->bool{match s(r,"schema"){
+"entity-v3-global-passport-profile-status-v1"=>arr_eq(r.get("core_primitives"),&CORE)&&b(r,"core_semantics_changed",false)&&b(r,"market_engine_preserved",true)&&b(r,"one_passport_many_profiles",true)&&b(r,"evidence_truth_boundary_preserved",true),
+"entity-v3-global-profile-v1"=>{let k=s(r,"kind");let pid=s(r,"profile_id");!s(r,"profile_ref").is_empty()&&["GLOBAL","JURISDICTION","INDUSTRY","DOMAIN","PRIVACY","TRUST","DISCLOSURE"].contains(&k)&&hex64(r.get("schema_sha256"))&&b(r,"profile_is_not_authority",true)&&b(r,"standards_mapping_is_not_normative_equivalence",true)&&(!pid.to_ascii_uppercase().contains("DEFENCE")||b(r,"public_unclassified",true))},
+"entity-v3-profile-stack-resolution-v1"=>stack(r),
+"entity-v3-global-passport-v1"=>{let Some(ps)=r.get("profile_stack") else{return false};let Some(e)=r.get("economic_state") else{return false};arr_eq(r.get("core_primitives"),&CORE)&&!s(r,"rights_passport_id").is_empty()&&hex64(r.get("rights_passport_sha256"))&&stack(ps)&&b(r,"one_passport_many_profiles",true)&&b(r,"profile_composition_does_not_create_authority",true)&&b(r,"standards_mapping_is_not_normative_equivalence",true)&&b(r,"evidence_does_not_establish_objective_truth",true)&&b(r,"legal_effect_is_deployment_specific",true)&&b(r,"underlying_information_remains_nonrival",true)&&e.get("amount_units").and_then(Value::as_i64).is_some_and(|x|x>=0)&&b(e,"market_observation_is_not_accounting_fair_value",true)&&r.get("standards_mappings").and_then(Value::as_array).is_some_and(|a|a.iter().all(|m|b(m,"normative_equivalence_claimed",false)))},
+"entity-v3-continuous-ingest-result-v1"=>r.get("files").and_then(Value::as_i64).is_some_and(|x|x>=0)&&hex64(r.get("inventory_sha256"))&&b(r,"content_addressed",true)&&b(r,"custody_is_not_authority",true)&&b(r,"economic_value_invented",false),
+_=>false}}
+fn canonical(v:&Value)->String{match v{Value::Object(m)=>{let mut ks:Vec<_>=m.keys().collect();ks.sort();format!("{{{}}}",ks.into_iter().map(|k|format!("{}:{}",serde_json::to_string(k).unwrap(),canonical(&m[k]))).collect::<Vec<_>>().join(","))},Value::Array(a)=>format!("[{}]",a.iter().map(canonical).collect::<Vec<_>>().join(",")),_=>serde_json::to_string(v).unwrap()}}
+fn main(){let raw=fs::read(KIT).expect("sealed v3.4 kit");assert_eq!(sha(&raw),KIT_SHA,"sealed kit SHA-256 mismatch");let kit:Value=serde_json::from_slice(&raw).unwrap();let mut cases=kit["cases"].as_array().unwrap().clone();cases.sort_by_key(|c|s(c,"id").to_string());let mut rows=Vec::new();let mut passed=0usize;for c in cases{let actual=if valid(&c["record"]){"VALID"}else{"INVALID"};if actual==s(&c,"expect"){passed+=1};rows.push(json!({"id":s(&c,"id"),"actual":actual}))}let result=sha(canonical(&Value::Array(rows)).as_bytes());let overall=passed==24&&result==EXPECTED&&s(&kit,"expected_result_sha256")==EXPECTED;println!("{}",serde_json::to_string_pretty(&json!({"implementation":"rust","kit_sha256":KIT_SHA,"vectors_passed":passed,"vectors_total":24,"result_sha256":result,"expected_result_sha256":EXPECTED,"overall_valid":overall})).unwrap());if !overall{std::process::exit(1)}}
