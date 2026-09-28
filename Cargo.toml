@@ -1,6 +1,6 @@
 [package]
 name = "entity-rust-cleanroom"
-version = "1.0.0"
+version = "3.4.2"
 edition = "2024"
 description = "BTG-controlled ENTITY clean-room verifier and conformance baseline for reproducible protocol testing"
 license = "Apache-2.0"
